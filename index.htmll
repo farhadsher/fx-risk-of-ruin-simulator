@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FX Risk of Ruin Simulator</title>
+<style>
+  :root{
+    --bg:#0f1420; --card:#161d2e; --border:#232c42; --text:#e7ecf7; --muted:#8b93a7;
+    --accent:#4f8cff; --win:#22c58b; --loss:#ff5c5c;
+    --band-outer: rgba(79,140,255,0.10); --band-inner: rgba(79,140,255,0.22);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:24px; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:980px; margin:0 auto;}
+  h1{font-size:26px; margin:0 0 4px;}
+  .subtitle{color:var(--muted); font-size:14px; margin:0 0 24px;}
+  .subtitle a{color:var(--accent); text-decoration:none;}
+  .subtitle a:hover{text-decoration:underline;}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:20px; margin-bottom:20px;
+  }
+  .card h2{font-size:15px; margin:0 0 16px; font-weight:600;}
+  .controls{display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:16px;}
+  .field label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px;}
+  .field .row{display:flex; align-items:center; gap:8px;}
+  .field input[type="number"]{
+    width:100%; background:#0f1420; border:1px solid var(--border); border-radius:8px;
+    color:var(--text); padding:8px 10px; font-size:14px;
+  }
+  .field input[type="range"]{width:100%; accent-color:var(--accent);}
+  .field .val{font-size:12px; color:var(--accent); min-width:44px; text-align:right;}
+  button{
+    background:var(--accent); color:#fff; border:none; border-radius:8px;
+    padding:12px 22px; font-size:14px; font-weight:600; cursor:pointer; margin-top:18px;
+  }
+  button:hover{opacity:0.9;}
+  .stats{display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px;}
+  .stat{background:#0f1420; border:1px solid var(--border); border-radius:10px; padding:14px;}
+  .stat .label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em;}
+  .stat .value{font-size:22px; font-weight:700; margin-top:4px;}
+  .ruin-high{color:var(--loss);}
+  .ruin-low{color:var(--win);}
+  svg{width:100%; height:auto; display:block;}
+  .legend{display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; font-size:12px; color:var(--muted);}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .swatch{width:12px; height:12px; border-radius:3px; display:inline-block;}
+  .note{font-size:13px; color:var(--muted); line-height:1.6;}
+  footer{text-align:center; color:var(--muted); font-size:12px; margin-top:8px; padding-bottom:8px;}
+  footer a{color:var(--accent); text-decoration:none;}
+  footer a:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FX Risk of Ruin Simulator</h1>
+  <p class="subtitle">Run thousands of simulated trade sequences to see the real odds of blowing your account at a given risk level. Free tool by <a href="https://fxmare.com" target="_blank" rel="noopener">FXMARE</a>.</p>
+
+  <div class="card">
+    <h2>Simulation inputs</h2>
+    <div class="controls">
+      <div class="field">
+        <label>Starting balance ($)</label>
+        <input type="number" id="startBalance" value="10000" min="100" step="100">
+      </div>
+      <div class="field">
+        <label>Risk per trade (% of balance)</label>
+        <div class="row"><input type="range" id="riskPctRange" min="0.25" max="10" step="0.25" value="2"><span class="val" id="riskPctVal">2%</span></div>
+      </div>
+      <div class="field">
+        <label>Win rate (%)</label>
+        <div class="row"><input type="range" id="winRateRange" min="10" max="90" step="1" value="45"><span class="val" id="winRateVal">45%</span></div>
+      </div>
+      <div class="field">
+        <label>Reward : Risk ratio</label>
+        <div class="row"><input type="range" id="rrRange" min="0.5" max="5" step="0.1" value="2"><span class="val" id="rrVal">2.0</span></div>
+      </div>
+      <div class="field">
+        <label>Trades per run</label>
+        <div class="row"><input type="range" id="numTradesRange" min="20" max="500" step="10" value="150"><span class="val" id="numTradesVal">150</span></div>
+      </div>
+      <div class="field">
+        <label>Simulations</label>
+        <div class="row"><input type="range" id="numSimsRange" min="200" max="3000" step="100" value="1000"><span class="val" id="numSimsVal">1000</span></div>
+      </div>
+      <div class="field">
+        <label>Ruin threshold (% of start balance)</label>
+        <div class="row"><input type="range" id="ruinPctRange" min="10" max="90" step="5" value="50"><span class="val" id="ruinPctVal">50%</span></div>
+      </div>
+    </div>
+    <button id="runBtn">Run simulation</button>
+  </div>
+
+  <div class="card">
+    <h2>Results</h2>
+    <div class="stats" id="statsGrid"></div>
+  </div>
+
+  <div class="card">
+    <h2>Equity curve — percentile fan (10th / 25th / median / 75th / 90th)</h2>
+    <div id="fanChart"></div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--band-outer);"></span>10th–90th percentile range</span>
+      <span><span class="swatch" style="background:var(--band-inner);"></span>25th–75th percentile range</span>
+      <span><span class="swatch" style="background:var(--accent);"></span>Median path</span>
+      <span><span class="swatch" style="background:var(--loss); opacity:0.6;"></span>Ruin threshold</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Distribution of final balances</h2>
+    <div id="histChart"></div>
+  </div>
+
+  <div class="card">
+    <p class="note">This tool runs a Monte Carlo simulation: it plays out your win rate and reward:risk ratio over many random trade sequences (assuming independent trades and fixed fractional position sizing on current balance) to show the realistic spread of outcomes &mdash; not just the average. A strategy with a positive expectancy can still have a meaningful chance of deep drawdowns depending on risk per trade. This is for educational purposes only and does not constitute financial advice or a guarantee of future results. Everything runs locally in your browser &mdash; no data is sent anywhere.</p>
+  </div>
+
+  <footer>Built by <a href="https://fxmare.com" target="_blank" rel="noopener">FXMARE</a> &middot; MIT licensed</footer>
+</div>
+
+<script>
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function percentile(sortedArr, p){
+  const idx = (p/100) * (sortedArr.length - 1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  if(lo === hi) return sortedArr[lo];
+  return sortedArr[lo] + (sortedArr[hi]-sortedArr[lo]) * (idx-lo);
+}
+
+function runSimulation(cfg){
+  const rand = mulberry32(Date.now() ^ 0x9e3779b9);
+  const { startBalance, riskPct, winRate, rr, numTrades, numSims, ruinPct } = cfg;
+  const ruinLevel = startBalance * (ruinPct/100);
+  const paths = []; // numSims x (numTrades+1)
+  const finals = [];
+  const maxDDs = [];
+  let ruinedCount = 0;
+  let profitCount = 0;
+
+  for(let s=0; s<numSims; s++){
+    let balance = startBalance;
+    let peak = startBalance;
+    let maxDD = 0;
+    let ruined = false;
+    const path = new Float64Array(numTrades+1);
+    path[0] = balance;
+    for(let t=1; t<=numTrades; t++){
+      const riskAmount = balance * (riskPct/100);
+      const isWin = rand() < (winRate/100);
+      balance += isWin ? riskAmount*rr : -riskAmount;
+      if(balance < 0) balance = 0;
+      path[t] = balance;
+      if(balance > peak) peak = balance;
+      const dd = peak > 0 ? ((peak-balance)/peak)*100 : 0;
+      if(dd > maxDD) maxDD = dd;
+      if(balance <= ruinLevel) ruined = true;
+    }
+    paths.push(path);
+    finals.push(balance);
+    maxDDs.push(maxDD);
+    if(ruined) ruinedCount++;
+    if(balance > startBalance) profitCount++;
+  }
+
+  // percentile bands per trade index
+  const bands = { p10:[], p25:[], p50:[], p75:[], p90:[] };
+  for(let t=0; t<=numTrades; t++){
+    const col = new Array(numSims);
+    for(let s=0; s<numSims; s++) col[s] = paths[s][t];
+    col.sort((a,b)=>a-b);
+    bands.p10.push(percentile(col,10));
+    bands.p25.push(percentile(col,25));
+    bands.p50.push(percentile(col,50));
+    bands.p75.push(percentile(col,75));
+    bands.p90.push(percentile(col,90));
+  }
+
+  const sortedFinals = finals.slice().sort((a,b)=>a-b);
+
+  return {
+    bands,
+    finals: sortedFinals,
+    riskOfRuin: (ruinedCount/numSims)*100,
+    probProfit: (profitCount/numSims)*100,
+    medianFinal: percentile(sortedFinals,50),
+    p10Final: percentile(sortedFinals,10),
+    p90Final: percentile(sortedFinals,90),
+    avgMaxDD: maxDDs.reduce((a,b)=>a+b,0)/maxDDs.length,
+    ruinLevel,
+    startBalance,
+    numTrades
+  };
+}
+
+function fmt(n){
+  return '$' + Math.round(n).toLocaleString();
+}
+
+function renderStats(r){
+  const ruinClass = r.riskOfRuin >= 20 ? 'ruin-high' : 'ruin-low';
+  const stats = [
+    { label:'Risk of ruin', value: r.riskOfRuin.toFixed(1)+'%', cls: ruinClass },
+    { label:'Probability of profit', value: r.probProfit.toFixed(1)+'%' },
+    { label:'Median final balance', value: fmt(r.medianFinal) },
+    { label:'10th percentile (bad case)', value: fmt(r.p10Final) },
+    { label:'90th percentile (good case)', value: fmt(r.p90Final) },
+    { label:'Avg. max drawdown', value: r.avgMaxDD.toFixed(1)+'%' },
+  ];
+  document.getElementById('statsGrid').innerHTML = stats.map(s =>
+    `<div class="stat"><div class="label">${s.label}</div><div class="value ${s.cls||''}">${s.value}</div></div>`
+  ).join('');
+}
+
+function renderFanChart(r){
+  const W = 900, H = 340, padL = 60, padR = 20, padT = 16, padB = 30;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const n = r.bands.p50.length;
+
+  let yMin = Math.min(r.bands.p10.reduce((a,b)=>Math.min(a,b),Infinity), r.ruinLevel*0.9);
+  let yMax = r.bands.p90.reduce((a,b)=>Math.max(a,b),-Infinity);
+  if(yMax === yMin) yMax = yMin + 1;
+  const yPad = (yMax-yMin)*0.08;
+  yMin -= yPad; yMax += yPad;
+
+  const x = i => padL + (i/(n-1))*innerW;
+  const y = v => padT + innerH - ((v-yMin)/(yMax-yMin))*innerH;
+
+  function pathFor(arr){ return arr.map((v,i)=> (i===0?'M':'L') + x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' '); }
+  function areaFor(top, bottom){
+    const topPath = top.map((v,i)=> (i===0?'M':'L') + x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
+    const bottomPath = bottom.slice().reverse().map((v,i)=> 'L' + x(n-1-i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
+    return topPath + ' ' + bottomPath + ' Z';
+  }
+
+  // y-axis gridlines/labels
+  const ticks = 5;
+  let gridSvg = '';
+  for(let i=0;i<=ticks;i++){
+    const v = yMin + (yMax-yMin)*(i/ticks);
+    const yy = y(v);
+    gridSvg += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="#232c42" stroke-width="1"/>`;
+    gridSvg += `<text x="${padL-8}" y="${(yy+4).toFixed(1)}" fill="#8b93a7" font-size="11" text-anchor="end">${fmt(v)}</text>`;
+  }
+
+  const ruinY = y(r.ruinLevel);
+
+  const svg = `
+  <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    ${gridSvg}
+    <path d="${areaFor(r.bands.p90, r.bands.p10)}" fill="var(--band-outer)"/>
+    <path d="${areaFor(r.bands.p75, r.bands.p25)}" fill="var(--band-inner)"/>
+    <line x1="${padL}" y1="${ruinY.toFixed(1)}" x2="${W-padR}" y2="${ruinY.toFixed(1)}" stroke="#ff5c5c" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7"/>
+    <path d="${pathFor(r.bands.p50)}" fill="none" stroke="#4f8cff" stroke-width="2.5"/>
+    <text x="${padL}" y="${padT+12}" fill="#8b93a7" font-size="11">Trade 0</text>
+    <text x="${W-padR}" y="${padT+12}" fill="#8b93a7" font-size="11" text-anchor="end">Trade ${r.numTrades}</text>
+  </svg>`;
+  document.getElementById('fanChart').innerHTML = svg;
+}
+
+function renderHistogram(r){
+  const W = 900, H = 220, padL = 50, padR = 20, padT = 10, padB = 30;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const finals = r.finals;
+  const min = finals[0], max = finals[finals.length-1];
+  const bins = 24;
+  const binWidth = (max-min)/bins || 1;
+  const counts = new Array(bins).fill(0);
+  finals.forEach(v => {
+    let idx = Math.floor((v-min)/binWidth);
+    if(idx >= bins) idx = bins-1;
+    if(idx < 0) idx = 0;
+    counts[idx]++;
+  });
+  const maxCount = Math.max(...counts, 1);
+  const barW = innerW/bins;
+
+  let bars = '';
+  for(let i=0;i<bins;i++){
+    const h = (counts[i]/maxCount) * innerH;
+    const bx = padL + i*barW;
+    const by = padT + innerH - h;
+    const binStart = min + i*binWidth;
+    const isProfit = binStart >= r.startBalance;
+    bars += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${(barW-2).toFixed(1)}" height="${h.toFixed(1)}" fill="${isProfit?'#22c58b':'#ff5c5c'}" opacity="0.85"/>`;
+  }
+
+  const startX = padL + ((r.startBalance-min)/(max-min||1))*innerW;
+
+  const svg = `
+  <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    ${bars}
+    <line x1="${startX.toFixed(1)}" y1="${padT}" x2="${startX.toFixed(1)}" y2="${padT+innerH}" stroke="#e7ecf7" stroke-width="1.5" stroke-dasharray="4,4" opacity="0.6"/>
+    <text x="${padL}" y="${H-6}" fill="#8b93a7" font-size="11">${fmt(min)}</text>
+    <text x="${W-padR}" y="${H-6}" fill="#8b93a7" font-size="11" text-anchor="end">${fmt(max)}</text>
+  </svg>`;
+  document.getElementById('histChart').innerHTML = svg;
+}
+
+function syncLabel(rangeId, valId, suffix, decimals){
+  const range = document.getElementById(rangeId);
+  const val = document.getElementById(valId);
+  const update = () => {
+    const v = parseFloat(range.value);
+    val.textContent = (decimals ? v.toFixed(decimals) : v) + (suffix||'');
+  };
+  range.addEventListener('input', update);
+  update();
+}
+
+syncLabel('riskPctRange','riskPctVal','%');
+syncLabel('winRateRange','winRateVal','%');
+syncLabel('rrRange','rrVal','',1);
+syncLabel('numTradesRange','numTradesVal','');
+syncLabel('numSimsRange','numSimsVal','');
+syncLabel('ruinPctRange','ruinPctVal','%');
+
+function run(){
+  const cfg = {
+    startBalance: parseFloat(document.getElementById('startBalance').value) || 10000,
+    riskPct: parseFloat(document.getElementById('riskPctRange').value),
+    winRate: parseFloat(document.getElementById('winRateRange').value),
+    rr: parseFloat(document.getElementById('rrRange').value),
+    numTrades: parseInt(document.getElementById('numTradesRange').value),
+    numSims: parseInt(document.getElementById('numSimsRange').value),
+    ruinPct: parseFloat(document.getElementById('ruinPctRange').value),
+  };
+  const r = runSimulation(cfg);
+  renderStats(r);
+  renderFanChart(r);
+  renderHistogram(r);
+}
+
+document.getElementById('runBtn').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>
