@@ -43,6 +43,14 @@
     padding:12px 22px; font-size:14px; font-weight:600; cursor:pointer;
   }
   button:hover{opacity:0.9;}
+  button:disabled{cursor:default;}
+  button.is-loading{opacity:0.75; cursor:wait; position:relative;}
+  button.is-loading::after{
+    content:""; display:inline-block; width:12px; height:12px; margin-left:8px;
+    border:2px solid rgba(255,255,255,0.35); border-top-color:#fff; border-radius:50%;
+    vertical-align:middle; animation:rorSpin 0.7s linear infinite;
+  }
+  @keyframes rorSpin{ to{ transform:rotate(360deg); } }
   button.secondary{background:#232c42; color:var(--text);}
   button.ghost{background:transparent; color:var(--accent); border:1px solid var(--border); padding:8px 14px; font-size:12px;}
   .btnrow{display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;}
@@ -766,7 +774,27 @@ function exportCSV(){
   URL.revokeObjectURL(url);
 }
 
-document.getElementById('runBtn').addEventListener('click', run);
+function runWithLoadingState(){
+  const btn = document.getElementById('runBtn');
+  if(btn.disabled) return;
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  btn.classList.add('is-loading');
+  // Defer the heavy synchronous work one tick so the browser has a chance
+  // to paint the "Running..." state before the main thread blocks on the
+  // simulation loop (matters most at high sim-count / trade-count settings).
+  setTimeout(()=>{
+    try{
+      run();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      btn.classList.remove('is-loading');
+    }
+  }, 10);
+}
+document.getElementById('runBtn').addEventListener('click', runWithLoadingState);
 document.getElementById('exportBtn').addEventListener('click', exportCSV);
 run();
 </script>
